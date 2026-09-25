@@ -1,0 +1,26 @@
+# Render Blueprint for the love-arcade relay.
+# This is its OWN repo and its OWN service — completely separate from any other app you host.
+services:
+  - type: web
+    name: love-arcade-relay
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: PEER_KEY
+        value: lovearcade
+      - key: ALLOWED_ORIGINS        # your GitHub Pages address, e.g. https://yourname.github.io
+        sync: false
+      - key: CF_TURN_KEY_ID         # optional: Cloudflare Realtime TURN
+        sync: false
+      - key: CF_TURN_API_TOKEN
+        sync: false
+      - key: METERED_APP            # optional: Metered TURN (use this OR Cloudflare)
+        sync: false
+      - key: METERED_API_KEY
+        sync: false
