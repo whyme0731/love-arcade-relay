@@ -49,16 +49,27 @@ const limited = (req, res, next) => {
 const STUN = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }];
 let cache = null;
 
+/* Long-lived credentials mean the phones only need this server about once a week (it can sleep in between).
+   If Cloudflare refuses the long lifetime we fall back to 24h, so a bad setting can never break video. */
+let credTtl = 0;
 async function mintCloudflare() {
-  const r = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${process.env.CF_TURN_KEY_ID}/credentials/generate`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${process.env.CF_TURN_API_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ttl: 86400 })
-  });
-  if (!r.ok) throw new Error('cloudflare ' + r.status);
-  const j = await r.json();
-  const s = j.iceServers;
-  return Array.isArray(s) ? s : [s];
+  const want = [Number(process.env.TURN_TTL) || 604800, 86400];
+  let lastErr;
+  for (const ttl of want) {
+    try {
+      const r = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${process.env.CF_TURN_KEY_ID}/credentials/generate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${process.env.CF_TURN_API_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ttl })
+      });
+      if (!r.ok) throw new Error('cloudflare ' + r.status);
+      const j = await r.json();
+      const s = j.iceServers;
+      credTtl = ttl;
+      return Array.isArray(s) ? s : [s];
+    } catch (e) { lastErr = e; console.error('TURN mint with ttl ' + ttl + ' failed:', e.message); }
+  }
+  throw lastErr;
 }
 async function mintMetered() {
   const r = await fetch(`https://${process.env.METERED_APP}.metered.live/api/v1/turn/credentials?apiKey=${process.env.METERED_API_KEY}`);
@@ -78,7 +89,8 @@ async function getIce() {
 }
 app.get('/turn', limited, async (req, res) => {
   res.set('Cache-Control', 'no-store');
-  res.json({ iceServers: await getIce(), turn: (cache?.servers.length || 0) > STUN.length });
+  const iceServers = await getIce();
+  res.json({ iceServers, turn: iceServers.length > STUN.length, ttl: credTtl || 86400 });
 });
 
 /* ---------- PeerJS signaling ---------- */
